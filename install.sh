@@ -2,15 +2,15 @@
 # Compaction Advisor - One-Line Installer
 #
 # Install with:
-#   curl -fsSL https://raw.githubusercontent.com/vignesh07/compaction-advisor/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/dvjn/compaction-advisor/main/install.sh | bash
 #
 # Or clone and run:
-#   git clone https://github.com/vignesh07/compaction-advisor.git
+#   git clone https://github.com/dvjn/compaction-advisor.git
 #   cd compaction-advisor && ./install.sh
 
 set -euo pipefail
 
-REPO_URL="https://raw.githubusercontent.com/vignesh07/compaction-advisor/main"
+REPO_URL="https://raw.githubusercontent.com/dvjn/compaction-advisor/main"
 CLAUDE_DIR="$HOME/.claude"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 

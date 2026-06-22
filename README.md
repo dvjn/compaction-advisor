@@ -12,7 +12,7 @@
 ### Option 1: Plugin Marketplace (Recommended)
 
 ```bash
-/plugin marketplace add vignesh07/compaction-advisor
+/plugin marketplace add dvjn/compaction-advisor
 /plugin install compaction-advisor
 /compaction-advisor:setup
 ```
@@ -24,7 +24,7 @@ Then restart Claude Code. That's it!
 ### Option 2: One-Line Install (without plugin system)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/vignesh07/compaction-advisor/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/dvjn/compaction-advisor/main/install.sh | bash
 ```
 
 Then restart Claude Code.
