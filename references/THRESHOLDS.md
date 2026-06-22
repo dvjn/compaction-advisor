@@ -175,11 +175,30 @@ From `/context` output:
 
 ### Model Context Windows
 
+The status line reads the **actual** window size from Claude Code's
+`context_window.context_window_size` (falling back to 200k only if absent), so
+usable space scales automatically with the model in use:
+
 | Model | Total | Buffer (~22.5%) | Usable |
 |-------|-------|-----------------|--------|
 | Opus 4.5 | 200k | 45k | 155k |
 | Sonnet | 200k | 45k | 155k |
 | Haiku | 200k | 45k | 155k |
+| (1M-context model) | 1M | ~230k | ~770k |
+
+### Configuration
+
+The buffer and status thresholds are overridable via environment variables
+(useful if a model's autocompact buffer differs, or you want earlier/later
+warnings). Thresholds are absolute free-token amounts — a task's token needs
+don't scale with window size — so the defaults hold across models.
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `CONTEXT_ADVISOR_BUFFER_PERCENT` | `23` | % of the window reserved as autocompact buffer |
+| `CONTEXT_ADVISOR_CRITICAL_K` | `15` | 🔴 below this many k free |
+| `CONTEXT_ADVISOR_WARNING_K` | `30` | 🟠 below this many k free |
+| `CONTEXT_ADVISOR_CAUTION_K` | `50` | 🟡 below this many k free |
 
 ### Cache Behavior
 

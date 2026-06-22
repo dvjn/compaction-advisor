@@ -30,8 +30,9 @@ CACHE_CREATION=$(echo "$USAGE" | jq -r '.cache_creation_input_tokens // 0')
 CACHE_READ=$(echo "$USAGE" | jq -r '.cache_read_input_tokens // 0')
 TOTAL_USED=$((INPUT_TOKENS + CACHE_CREATION + CACHE_READ))
 
-# Claude Code reserves ~22.5% as autocompact buffer
-BUFFER_PERCENT=23
+# Claude Code reserves ~22.5% as autocompact buffer. Overridable for setups
+# whose buffer differs (env var, default 23).
+BUFFER_PERCENT=${CONTEXT_ADVISOR_BUFFER_PERCENT:-23}
 USABLE_TOKENS=$((CONTEXT_SIZE * (100 - BUFFER_PERCENT) / 100))
 FREE_TOKENS=$((USABLE_TOKENS - TOTAL_USED))
 if [ $FREE_TOKENS -lt 0 ]; then FREE_TOKENS=0; fi
@@ -53,14 +54,21 @@ for ((i=0; i<EMPTY; i++)); do BAR+="░"; done
 
 FREE_K=$((FREE_TOKENS / 1000))
 
+# Status thresholds (free tokens). These are absolute headroom amounts, not
+# percentages — the tokens a task needs don't scale with total window size — so
+# they hold across models. Overridable via env vars (values in thousands).
+CRITICAL_TOKENS=$(( ${CONTEXT_ADVISOR_CRITICAL_K:-15} * 1000 ))
+WARNING_TOKENS=$(( ${CONTEXT_ADVISOR_WARNING_K:-30} * 1000 ))
+CAUTION_TOKENS=$(( ${CONTEXT_ADVISOR_CAUTION_K:-50} * 1000 ))
+
 # Determine status level
-if [ $FREE_TOKENS -lt 15000 ]; then
+if [ $FREE_TOKENS -lt $CRITICAL_TOKENS ]; then
     STATUS="critical"
     DISPLAY="🔴 COMPACT ${FREE_K}k"
-elif [ $FREE_TOKENS -lt 30000 ]; then
+elif [ $FREE_TOKENS -lt $WARNING_TOKENS ]; then
     STATUS="warning"
     DISPLAY="🟠 ${FREE_K}k free"
-elif [ $FREE_TOKENS -lt 50000 ]; then
+elif [ $FREE_TOKENS -lt $CAUTION_TOKENS ]; then
     STATUS="caution"
     DISPLAY="🟡 ${FREE_K}k free"
 else

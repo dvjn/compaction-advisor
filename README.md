@@ -268,7 +268,7 @@ All scripts are simple bash — inspect them yourself in `/scripts/`.
 ### Context Window Math
 
 ```
-Total context:        200,000 tokens
+Total context:        200,000 tokens   (read live from the model — not hard-coded)
 Autocompact buffer:   ~45,000 tokens (22.5%)
 ─────────────────────────────────────
 Usable space:         ~155,000 tokens
@@ -276,7 +276,18 @@ Usable space:         ~155,000 tokens
 Free space = Usable - Current usage
 ```
 
-The status line shows **free space before compaction triggers**, not total context remaining.
+The status line shows **free space before compaction triggers**, not total context remaining. The window size is read from Claude Code's `context_window_size`, so it adapts automatically to whatever model you're running.
+
+### Configuration
+
+The buffer and thresholds are tunable via environment variables (all optional):
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `CONTEXT_ADVISOR_BUFFER_PERCENT` | `23` | % reserved as autocompact buffer |
+| `CONTEXT_ADVISOR_CRITICAL_K` | `15` | 🔴 below this many k free |
+| `CONTEXT_ADVISOR_WARNING_K` | `30` | 🟠 below this many k free |
+| `CONTEXT_ADVISOR_CAUTION_K` | `50` | 🟡 below this many k free |
 
 ### How Claude Code Provides Data
 

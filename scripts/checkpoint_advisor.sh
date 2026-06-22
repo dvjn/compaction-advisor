@@ -4,11 +4,13 @@
 # Monitors tool usage during long tasks and nudges Claude in two ways
 # when context is getting low:
 #
-# 1. Checkpoint: after 8+ modifying operations (Edit/Write/Bash/...),
-#    suggest pausing to /compact before mid-task compaction hits.
-# 2. Subagent delegation: after a burst of read-only exploration
-#    (Read/Grep/Glob), suggest offloading further exploration to a
-#    subagent (Task tool) so bulky output never enters this context.
+# 1. Checkpoint: after 8+ modifying operations (Edit/Write/NotebookEdit and
+#    writing Bash commands), suggest pausing to /compact before mid-task
+#    compaction hits.
+# 2. Subagent delegation: after a burst of read-only exploration (Read/Grep/
+#    Glob and read-only Bash like grep/find/cat), suggest offloading further
+#    exploration to a subagent (Task tool) so bulky output never enters this
+#    context.
 #
 # Both only fire when context is actually concerning (not safe), so the
 # token cost stays at zero while there's healthy headroom.
@@ -43,14 +45,61 @@ LAST_CHECKPOINT=$(jq -r '.last_checkpoint // 0' "$STATE_FILE")
 READ_COUNT=$(jq -r '.read_count // 0' "$STATE_FILE")
 LAST_SUBAGENT_HINT=$(jq -r '.last_subagent_hint // 0' "$STATE_FILE")
 
-case "$TOOL_NAME" in
-    Task)
-        # Already delegating to a subagent — exactly what we'd advise.
-        # Don't track or nag; let it run.
+# Classify the tool into a tracking class: read | modify | skip
+#   read   - read-only exploration → feeds the subagent-delegation hint
+#   modify - significant operation  → feeds the checkpoint counter
+#   skip   - don't track
+classify_tool() {
+    case "$TOOL_NAME" in
+        Read|Grep|Glob)      echo "read";   return ;;
+        Edit|Write|NotebookEdit) echo "modify"; return ;;
+        Task)                echo "skip";   return ;;  # already delegating
+        Bash)                ;;                          # inspect command below
+        *)                   echo "skip";   return ;;
+    esac
+
+    # Bash: read-only commands count as exploration; anything else as a
+    # modifying op. Be conservative — if we can't be sure it's read-only,
+    # treat it as modifying.
+    local cmd first sub
+    cmd=$(echo "$input" | jq -r '.tool_input.command // ""')
+
+    # Output redirects, tee, or command chaining can hide a write → modify.
+    case "$cmd" in
+        *">"*|*"|tee"*|*" tee "*|*"&&"*|*";"*) echo "modify"; return ;;
+    esac
+
+    first=$(echo "$cmd" | awk '{print $1}')
+    first=${first##*/}   # strip any leading path (/usr/bin/grep → grep)
+
+    case "$first" in
+        cat|ls|grep|rg|egrep|fgrep|find|fd|head|tail|wc|tree|stat|file|pwd|\
+        echo|printf|which|type|env|date|du|df|ps|sort|uniq|cut|column|less|\
+        more|diff|comm|jq|yq|whoami|id|hostname|uname|dirname|basename|\
+        realpath|readlink|tac|nl|od|xxd|hexdump)
+            echo "read"; return ;;
+        git)
+            # Only clearly read-only git subcommands count as exploration.
+            sub=$(echo "$cmd" | awk '{print $2}')
+            case "$sub" in
+                status|log|diff|show|blame|ls-files|rev-parse|describe|\
+                shortlog|reflog|cat-file|grep|whatchanged)
+                    echo "read"; return ;;
+            esac
+            echo "modify"; return ;;
+    esac
+
+    echo "modify"
+}
+
+CLASS=$(classify_tool)
+
+case "$CLASS" in
+    skip)
         exit 0
         ;;
 
-    Read|Grep|Glob)
+    read)
         # Read-only exploration. Track it: a long burst of these while
         # context is tight is the prime signal to delegate to a subagent.
         NEW_READ_COUNT=$((READ_COUNT + 1))
@@ -75,16 +124,9 @@ case "$TOOL_NAME" in
         fi
         exit 0
         ;;
-
-    Edit|Write|Bash|NotebookEdit)
-        # Significant modifying operations — fall through to checkpoint logic.
-        ;;
-
-    *)
-        # Other tools — don't track.
-        exit 0
-        ;;
 esac
+
+# CLASS == modify: fall through to checkpoint logic.
 
 # Increment tool count for modifying operations
 NEW_TOOL_COUNT=$((TOOL_COUNT + 1))
