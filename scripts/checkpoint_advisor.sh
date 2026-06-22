@@ -26,6 +26,15 @@ if [ ! -f "$STATE_FILE" ]; then
     exit 0
 fi
 
+# Skip if the state is stale (status line hasn't refreshed recently). Without
+# this, a checkpoint/subagent hint could fire off an out-of-date status.
+# GNU (Linux) first, then BSD/macOS — same ordering as inject_context.sh.
+FILE_TIME=$(stat -c %Y "$STATE_FILE" 2>/dev/null || stat -f %m "$STATE_FILE" 2>/dev/null || echo 0)
+CURRENT_TIME=$(date +%s)
+if [ $((CURRENT_TIME - FILE_TIME)) -gt 120 ]; then
+    exit 0
+fi
+
 # Read current state
 STATUS=$(jq -r '.status // "safe"' "$STATE_FILE")
 FREE_K=$(jq -r '.free_k // 0' "$STATE_FILE")
@@ -85,9 +94,8 @@ TOOLS_SINCE_CHECKPOINT=$((NEW_TOOL_COUNT - LAST_CHECKPOINT))
 jq --argjson tc "$NEW_TOOL_COUNT" '.tool_count = $tc' "$STATE_FILE" > "$STATE_FILE.tmp"
 mv "$STATE_FILE.tmp" "$STATE_FILE"
 
-# Checkpoint thresholds
-MIN_TOOLS_FOR_CHECKPOINT=8  # Don't warn until 8+ operations
-CHECKPOINT_INTERVAL=10      # After checkpoint, wait another 10 operations
+# Checkpoint threshold: don't warn until 8+ operations since the last checkpoint
+MIN_TOOLS_FOR_CHECKPOINT=8
 
 # Only suggest checkpoint if:
 # 1. Context is concerning (not safe)

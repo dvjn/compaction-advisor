@@ -15,6 +15,12 @@ STATE_FILE="$HOME/.claude/context_state_${SESSION_ID}.json"
 TOOL_COUNT=0
 if [ -f "$STATE_FILE" ]; then
     TOOL_COUNT=$(jq -r '.tool_count // 0' "$STATE_FILE")
+
+    # Compaction frees the context, so reset the tracking counters. Otherwise
+    # the post-compaction session starts with stale-high counts and a checkpoint
+    # or subagent hint could fire almost immediately once context refills.
+    jq '.tool_count = 0 | .read_count = 0 | .last_checkpoint = 0 | .last_subagent_hint = 0' \
+        "$STATE_FILE" > "$STATE_FILE.tmp" && mv "$STATE_FILE.tmp" "$STATE_FILE"
 fi
 
 # Output emergency message
