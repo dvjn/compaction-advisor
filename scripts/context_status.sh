@@ -68,12 +68,16 @@ else
     DISPLAY="🟢 ${FREE_K}k free"
 fi
 
-# Read existing tool count (for checkpoint tracking)
+# Read existing counters (for checkpoint + subagent-hint tracking)
 TOOL_COUNT=0
 LAST_CHECKPOINT=0
+READ_COUNT=0
+LAST_SUBAGENT_HINT=0
 if [ -f "$STATE_FILE" ]; then
     TOOL_COUNT=$(jq -r '.tool_count // 0' "$STATE_FILE" 2>/dev/null || echo 0)
     LAST_CHECKPOINT=$(jq -r '.last_checkpoint // 0' "$STATE_FILE" 2>/dev/null || echo 0)
+    READ_COUNT=$(jq -r '.read_count // 0' "$STATE_FILE" 2>/dev/null || echo 0)
+    LAST_SUBAGENT_HINT=$(jq -r '.last_subagent_hint // 0' "$STATE_FILE" 2>/dev/null || echo 0)
 fi
 
 # Write state to session-specific file for hook to read
@@ -89,6 +93,8 @@ cat > "$STATE_FILE" << EOF
   "status": "$STATUS",
   "tool_count": $TOOL_COUNT,
   "last_checkpoint": $LAST_CHECKPOINT,
+  "read_count": $READ_COUNT,
+  "last_subagent_hint": $LAST_SUBAGENT_HINT,
   "timestamp": $(date +%s)
 }
 EOF

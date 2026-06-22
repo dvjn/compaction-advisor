@@ -120,13 +120,36 @@ During long autonomous tasks (refactors, multi-file changes), the plugin monitor
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### Three Levels of Protection
+### Levels of Protection
 
 | Hook | When | What Happens |
 |------|------|--------------|
-| `UserPromptSubmit` | Before each task | Warns if task won't fit |
-| `PostToolUse` | After 8+ operations | Suggests checkpoint if low |
+| `UserPromptSubmit` | Before each task | Warns if task won't fit; advises delegating exploration to a subagent |
+| `PostToolUse` | After 8+ modifying ops | Suggests checkpoint, or delegating repetitive edit batches to a subagent |
+| `PostToolUse` | After a burst of reads/greps | Suggests offloading exploration to a subagent |
 | `PreCompact` | Just before auto-compact | Emergency context save |
+
+### 🤝 Subagent Delegation
+
+The cheapest context is the context you never spend. When you're low and Claude is
+still exploring — reading many files, searching broadly — **or grinding through a
+batch of repetitive edits** (the same change across many files, scaffolding, a rename
+sweep) — the plugin nudges it to spawn a **subagent** (`Task` tool) for that work.
+The bulky file output, search results, and diffs live in the subagent's own context
+window; only its summary returns to your main thread. It's the closest thing to
+"collapsing a group of tool calls into one," done *before* those calls ever bloat
+your window.
+
+These hints only appear when context is concerning, so they cost **zero tokens** when
+you have healthy headroom.
+
+Beyond the hooks, the bundled **skill** makes this a *default working posture*: it
+steers Claude to plan multi-step work as subagent-driven flows from the start —
+fanning out independent exploration, batching repetitive edits, and offloading
+verification — rather than waiting until context is already tight. For large,
+structured fan-out (audits, migrations, multi-file reviews), it will suggest a
+**workflow** if your harness exposes multi-agent orchestration (opt-in — it won't
+launch one unprompted). If there's no workflow tool, plain subagents cover it.
 
 ---
 

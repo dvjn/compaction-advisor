@@ -36,13 +36,13 @@ FREE_K=$(jq -r '.free_k // 0' "$STATE_FILE")
 # Only inject context for concerning states
 case "$STATUS" in
     critical)
-        echo "<context-status>CRITICAL: Only ${FREE_K}k tokens free. Run /compact before any task.</context-status>"
+        echo "<context-status>CRITICAL: Only ${FREE_K}k tokens free. Run /compact before any task. Delegate exploration/search AND any batch of repetitive edits to a subagent (Task tool) to keep this context lean.</context-status>"
         ;;
     warning)
-        echo "<context-status>WARNING: ${FREE_K}k tokens free. Only small tasks safe. Consider /compact before medium+ tasks.</context-status>"
+        echo "<context-status>WARNING: ${FREE_K}k tokens free. Only small tasks safe. Delegate heavy reading/searching and repetitive multi-file edits to a subagent (Task tool), and /compact before medium+ tasks.</context-status>"
         ;;
     caution)
-        echo "<context-status>CAUTION: ${FREE_K}k tokens free. Medium tasks OK, compact before large tasks.</context-status>"
+        echo "<context-status>CAUTION: ${FREE_K}k tokens free. Medium tasks OK; prefer a subagent (Task tool) for broad exploration or repetitive edit batches, and compact before large tasks.</context-status>"
         ;;
     *)
         # Safe - don't inject anything, avoid noise

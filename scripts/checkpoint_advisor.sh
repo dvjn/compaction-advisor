@@ -1,12 +1,17 @@
 #!/bin/bash
 # Checkpoint Advisor - PostToolUse Hook
 #
-# Monitors tool usage during long tasks and suggests checkpoints
-# when context is getting low. Prevents mid-task compaction surprise.
+# Monitors tool usage during long tasks and nudges Claude in two ways
+# when context is getting low:
 #
-# Only triggers when:
-# 1. Context is concerning (warning/critical)
-# 2. Multiple tools have been called since last checkpoint (8+)
+# 1. Checkpoint: after 8+ modifying operations (Edit/Write/Bash/...),
+#    suggest pausing to /compact before mid-task compaction hits.
+# 2. Subagent delegation: after a burst of read-only exploration
+#    (Read/Grep/Glob), suggest offloading further exploration to a
+#    subagent (Task tool) so bulky output never enters this context.
+#
+# Both only fire when context is actually concerning (not safe), so the
+# token cost stays at zero while there's healthy headroom.
 
 set -euo pipefail
 
@@ -16,18 +21,7 @@ SESSION_ID=$(echo "$input" | jq -r '.session_id // "default"' | tr -d '[:space:]
 TOOL_NAME=$(echo "$input" | jq -r '.tool_name // "unknown"')
 STATE_FILE="$HOME/.claude/context_state_${SESSION_ID}.json"
 
-# Only track modifying tools (skip reads, searches)
-case "$TOOL_NAME" in
-    Edit|Write|Bash|NotebookEdit)
-        # These are significant operations worth tracking
-        ;;
-    *)
-        # Skip tracking for read-only tools
-        exit 0
-        ;;
-esac
-
-# Check if state file exists
+# Check if state file exists (status line hasn't run yet → nothing to do)
 if [ ! -f "$STATE_FILE" ]; then
     exit 0
 fi
@@ -37,8 +31,53 @@ STATUS=$(jq -r '.status // "safe"' "$STATE_FILE")
 FREE_K=$(jq -r '.free_k // 0' "$STATE_FILE")
 TOOL_COUNT=$(jq -r '.tool_count // 0' "$STATE_FILE")
 LAST_CHECKPOINT=$(jq -r '.last_checkpoint // 0' "$STATE_FILE")
+READ_COUNT=$(jq -r '.read_count // 0' "$STATE_FILE")
+LAST_SUBAGENT_HINT=$(jq -r '.last_subagent_hint // 0' "$STATE_FILE")
 
-# Increment tool count
+case "$TOOL_NAME" in
+    Task)
+        # Already delegating to a subagent — exactly what we'd advise.
+        # Don't track or nag; let it run.
+        exit 0
+        ;;
+
+    Read|Grep|Glob)
+        # Read-only exploration. Track it: a long burst of these while
+        # context is tight is the prime signal to delegate to a subagent.
+        NEW_READ_COUNT=$((READ_COUNT + 1))
+        READS_SINCE_HINT=$((NEW_READ_COUNT - LAST_SUBAGENT_HINT))
+
+        jq --argjson rc "$NEW_READ_COUNT" '.read_count = $rc' "$STATE_FILE" > "$STATE_FILE.tmp"
+        mv "$STATE_FILE.tmp" "$STATE_FILE"
+
+        # Suggest delegation once context is concerning and enough reads
+        # have piled up since the last hint.
+        MIN_READS_FOR_HINT=6
+        if [ "$STATUS" != "safe" ] && [ $READS_SINCE_HINT -ge $MIN_READS_FOR_HINT ]; then
+            jq --argjson lh "$NEW_READ_COUNT" '.last_subagent_hint = $lh' "$STATE_FILE" > "$STATE_FILE.tmp"
+            mv "$STATE_FILE.tmp" "$STATE_FILE"
+
+            echo "<context-subagent-hint>"
+            echo "DELEGATE TO SUBAGENT: ${READS_SINCE_HINT} read-only operations and only ${FREE_K}k free."
+            echo "If you're still exploring/searching, spawn a subagent (Task tool) for it — the"
+            echo "bulky file and search output stays in the subagent's context and only its summary"
+            echo "returns here, keeping this context lean."
+            echo "</context-subagent-hint>"
+        fi
+        exit 0
+        ;;
+
+    Edit|Write|Bash|NotebookEdit)
+        # Significant modifying operations — fall through to checkpoint logic.
+        ;;
+
+    *)
+        # Other tools — don't track.
+        exit 0
+        ;;
+esac
+
+# Increment tool count for modifying operations
 NEW_TOOL_COUNT=$((TOOL_COUNT + 1))
 TOOLS_SINCE_CHECKPOINT=$((NEW_TOOL_COUNT - LAST_CHECKPOINT))
 
@@ -65,12 +104,16 @@ if [ "$STATUS" != "safe" ] && [ $TOOLS_SINCE_CHECKPOINT -ge $MIN_TOOLS_FOR_CHECK
             echo "<context-checkpoint>"
             echo "CHECKPOINT RECOMMENDED: Context critically low (${FREE_K}k free) after ${TOOLS_SINCE_CHECKPOINT} operations."
             echo "Good time to pause and /compact. Summarize progress so far and key context to preserve."
+            echo "If the remaining edits are repetitive/mechanical (same change across many files,"
+            echo "scaffolding), delegate that batch to a subagent (Task tool) so the diffs and output"
+            echo "stay out of this context."
             echo "</context-checkpoint>"
             ;;
         warning)
             echo "<context-checkpoint>"
             echo "CHECKPOINT SUGGESTED: Context at ${FREE_K}k free after ${TOOLS_SINCE_CHECKPOINT} operations."
-            echo "If more significant work remains, consider /compact now to avoid mid-task interruption."
+            echo "If more significant work remains, consider /compact now to avoid mid-task interruption,"
+            echo "or hand a batch of repetitive edits to a subagent (Task tool) to keep this context lean."
             echo "</context-checkpoint>"
             ;;
         caution)
